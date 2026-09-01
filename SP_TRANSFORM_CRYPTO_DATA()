@@ -1,0 +1,39 @@
+CREATE OR REPLACE PROCEDURE CRYPTO_CLOUD_DB.RAW.SP_TRANSFORM_CRYPTO_DATA()
+RETURNS VARCHAR
+LANGUAGE SQL
+EXECUTE AS OWNER
+AS '
+BEGIN
+    -- 1. Creamos (o reemplazamos) la tabla analítica final calculada
+    -- Usamos funciones de ventana de SQL Avanzado (LAG y OVER)
+    CREATE OR REPLACE TABLE crypto_cloud_db.raw.fact_crypto_trends AS
+    WITH lecturas_ordenadas AS (
+        SELECT
+            id,
+            name,
+            symbol,
+            current_price AS precio_actual,
+            -- Buscamos el precio del día anterior para la misma moneda
+            LAG(current_price) OVER (PARTITION BY id ORDER BY snapshot_time_clean ASC) AS precio_anterior,
+            snapshot_time_clean
+        FROM crypto_cloud_db.raw.v_crypto_prices
+    )
+    SELECT
+        id,
+        name,
+        symbol,
+        snapshot_time_clean,
+        precio_anterior,
+        precio_actual,
+        -- Calculamos la métrica dura de ingeniería de datos
+        (precio_actual - precio_anterior) AS crecimiento_absoluto,
+        CASE 
+            WHEN precio_anterior IS NOT NULL AND precio_anterior > 0 
+            THEN ROUND(((precio_actual - precio_anterior) / precio_anterior) * 100, 2)
+            ELSE 0 
+        END AS crecimiento_porcentual
+    FROM lecturas_ordenadas;
+
+    RETURN '' Tabla analítica FACT_CRYPTO_TRENDS generada con éxito en la nube.'';
+END;
+';
